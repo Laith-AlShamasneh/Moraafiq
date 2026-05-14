@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Muraafiq.API/Muraafiq.API.csproj" />
+  <Project Path="Muraafiq.Application/Muraafiq.Application.csproj" />
+  <Project Path="Muraafiq.Domain/Muraafiq.Domain.csproj" />
+  <Project Path="Muraafiq.Infrastructure/Muraafiq.Infrastructure.csproj" />
+  <Project Path="Muraafiq.Shared/Muraafiq.Shared.csproj" />
+</Solution>
