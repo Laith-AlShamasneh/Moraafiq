@@ -6,10 +6,11 @@ using System.Data;
 
 namespace Muraafiq.Infrastructure.Persistence;
 
-internal class GlobalExecuters(IDbConnection connection, IDbTransaction? transaction) : IGlobalExecuters
+internal class GlobalExecuters(IUnitOfWork unitOfWork) : IGlobalExecuters
 {
-    private IDbConnection Cn => connection;
-    private IDbTransaction? Tx => transaction;
+    // Dynamically access current connection and transaction directly from UoW
+    private IDbConnection Cn => unitOfWork.Connection;
+    private IDbTransaction? Tx => unitOfWork.Transaction;
 
     private static async Task<TResult> HandleSqlExceptions<TResult>(Func<Task<TResult>> action)
     {
@@ -17,9 +18,14 @@ internal class GlobalExecuters(IDbConnection connection, IDbTransaction? transac
         {
             return await action();
         }
-        catch (SqlException ex) when (ex.Number >= 50000)
+        catch (SqlException ex)
         {
-            throw new SqlStoredProcedureException(ex.Number, ex.Message, ex);
+            if (ex.Number >= 50000)
+            {
+                throw new SqlStoredProcedureException(ex.Number, ex.Message, ex);
+            }
+
+            throw;
         }
     }
 
@@ -46,7 +52,7 @@ internal class GlobalExecuters(IDbConnection connection, IDbTransaction? transac
         return await HandleSqlExceptions<IReadOnlyList<T>>(async () =>
         {
             var result = await Cn.QueryAsync<T>(spName, parameters, Tx, commandType: CommandType.StoredProcedure);
-            return [.. result];
+            return result.AsList();
         });
     }
 

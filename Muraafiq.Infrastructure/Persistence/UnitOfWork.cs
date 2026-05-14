@@ -5,10 +5,8 @@ using System.Data;
 
 namespace Muraafiq.Infrastructure.Persistence;
 
-internal class UnitOfWork(IConfiguration configuration) : IUnitOfWork
+internal class UnitOfWork(ISqlConnectionFactory connectionFactory) : IUnitOfWork
 {
-    private readonly string _connectionString = configuration.GetConnectionString("SqlConnection")
-            ?? throw new InvalidOperationException("Connection string 'SqlConnection' not found in configuration.");
     private IDbConnection? _connection;
     private IDbTransaction? _transaction;
     private IGlobalExecuters? _globalActions;
@@ -17,8 +15,7 @@ internal class UnitOfWork(IConfiguration configuration) : IUnitOfWork
     {
         get
         {
-            // Lazily instantiate and open the connection only when accessed
-            _connection ??= new SqlConnection(_connectionString);
+            _connection ??= connectionFactory.CreateConnection();
             if (_connection.State != ConnectionState.Open)
             {
                 _connection.Open();
@@ -29,19 +26,18 @@ internal class UnitOfWork(IConfiguration configuration) : IUnitOfWork
 
     public IDbTransaction? Transaction => _transaction;
 
-    // Passing the 'Connection' property ensures it opens if this is the first DB access
-    public IGlobalExecuters GlobalActions => _globalActions ??= new GlobalExecuters(Connection, _transaction);
+    // We pass 'this' (the UnitOfWork itself) so GlobalExecuters dynamically resolves 
+    // the current connection and transaction, rather than caching stale references.
+    public IGlobalExecuters GlobalActions => _globalActions ??= new GlobalExecuters(this);
 
     public void BeginTransaction()
     {
-        // Prevent nested transactions for simplicity
-        if (_transaction is not null) return;
+        if (_transaction is not null)
+        {
+            throw new InvalidOperationException("A transaction is already in progress. Parallel transactions are not allowed.");
+        }
 
-        // Accessing the 'Connection' property guarantees the DB is open before beginning the transaction
         _transaction = Connection.BeginTransaction();
-
-        // RE-INITIALIZE GlobalActions so it picks up the newly created Transaction
-        _globalActions = new GlobalExecuters(Connection, _transaction);
     }
 
     public void Commit()
@@ -77,7 +73,6 @@ internal class UnitOfWork(IConfiguration configuration) : IUnitOfWork
     {
         _transaction?.Dispose();
         _transaction = null;
-        _globalActions = null; // Reset so the next DB call creates a fresh executor without a dead transaction
     }
 
     public async ValueTask DisposeAsync()
@@ -92,5 +87,7 @@ internal class UnitOfWork(IConfiguration configuration) : IUnitOfWork
         {
             _connection?.Dispose();
         }
+
+        _connection = null;
     }
 }
